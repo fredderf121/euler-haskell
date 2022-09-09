@@ -3,9 +3,12 @@
 
 module EulerQuestions where
 
+import Data.Foldable (Foldable (foldl'))
 import Data.Function
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
+import Data.Monoid
+import qualified Data.Sequence as Seq
 import Debug.Trace
 
 -- ANCHOR Q1
@@ -45,6 +48,9 @@ type Factor = Int
 
 type Frequency = Int
 
+intSqrRt :: Int -> Int
+intSqrRt = round . sqrt . (fromIntegral :: Int -> Float)
+
 updateCounterMap :: Ord k => k -> Map.Map k Frequency -> Map.Map k Frequency
 updateCounterMap k = Map.insertWith (+) k 1
 
@@ -53,7 +59,7 @@ primeFactors n =
   primeFactors'
     n
     -- List of numbers of 2 and odd numbers less than sqrt(n)
-    (2 : takeWhile (<= (round . sqrt . (fromIntegral :: Int -> Float)) n) [3, 5 ..])
+    (2 : takeWhile (<= intSqrRt n) [3, 5 ..])
     Map.empty
   where
     -- Check if f can divide n' evenly. If so, update its number in a frequency map,
@@ -102,3 +108,57 @@ q4 = maximum [x * y | x <- [100 .. 999], y <- [x .. 999], show (x * y) == revers
 --            E.g., 8 = {2:3} (Prime factor 2 appears 3 times), 6 = {2:1, 3:1}, 5 = {5:1} (Note that we ignore '1' as a factor)
 --            Keep track of a master frequency map, keeping track of the **maximum** number of times a prime factor appears
 --            At the end, multiply each prime factor by their maximum occurence to find the answer.
+q5 :: Int
+q5 =
+  [2 .. 20]
+    -- Prime factors of each number in list
+    & fmap primeFactors
+    -- Combining the prime factors for each number, keeping the largest frequency of each number
+    & foldl' (Map.unionWith max) Map.empty
+    -- Multiplying Factor ^ Frequency
+    & Map.foldlWithKey' (\acc factor frequency -> acc * factor ^ frequency) 1
+
+-- ANCHOR Q6
+-- Find the difference between the sum of the squares of the first
+-- one hundred natural numbers and the square of the sum.
+q6 :: Int
+q6 = sum [1 .. 100] ^ (2 :: Int) - sum [x ^ (2 :: Int) | x <- [1 .. 100]]
+
+-- ANCHOR Q7
+-- By listing the first six prime numbers: 2, 3, 5, 7, 11, and 13,
+-- we can see that the 6th prime is 13.
+-- What is the 10 001st prime number?
+
+-- Keep a list of prime numbers found so far
+-- Iterate through a list of 2 + all odd numbers, checking if
+-- each number can be divided by any number in the list. If not, add it to the set.
+nthPrime :: Int -> Int
+nthPrime n = case Seq.viewr $ calculatePrimeSeq n (2 : [3, 5 ..]) Seq.empty of
+  Seq.EmptyR -> error "There should always be at least one prime"
+  _ Seq.:> lastElement -> lastElement
+  where
+    -- Produces a Seq of the first n primes
+    -- 1st arg is how many primes to calculate
+    -- 2nd arg is a ordered list of numbers to filter primes from
+    -- 3rd arg is the accumulated primes found so far
+    -- Use Seq for fast append/prepends
+    calculatePrimeSeq :: Int -> [Int] -> Seq.Seq Int -> Seq.Seq Int
+    calculatePrimeSeq 0 _ primes = primes
+    calculatePrimeSeq _ [] primes = primes
+    calculatePrimeSeq n' (numToCheck : ns) primes =
+      -- We check if numToCheck is prime by checking if
+      -- any of the numbers inside primes (less than sqrt(numToCheck))
+      -- divide it evenly. If not, then it is prime
+      let primesToCheck = Seq.takeWhileL (<= intSqrRt numToCheck) primes
+          isPrime =
+            -- primesToCheck could be empty if sqrt(numToCheck) < anything in primes
+            -- In this case, numToCheck is indeed prime
+            Seq.null primesToCheck
+              -- If numToCheck is a multiple of any numbers inside primesToCheck, then it is not prime.
+              || not (getAny (foldMap (Any . (numToCheck `isMultipleOf`)) primesToCheck))
+       in if isPrime
+            then calculatePrimeSeq (n' - 1) ns (primes Seq.|> numToCheck)
+            else calculatePrimeSeq n' ns primes
+
+q7 :: Int
+q7 = nthPrime 10_001
